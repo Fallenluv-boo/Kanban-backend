@@ -1,0 +1,44 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  boards       Board[]
+  createdAt    DateTime @default(now())
+}
+
+model Board {
+  id        String   @id @default(uuid())
+  title     String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  columns   Column[]
+  createdAt DateTime @default(now())
+}
+
+model Column {
+  id        String   @id @default(uuid())
+  title     String
+  order     Int      // Щоб знати, яка колонка перша, а яка друга
+  boardId   String
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  tasks     Task[]
+}
+
+model Task {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  order       Int      // Для збереження порядку при Drag-and-Drop
+  columnId    String
+  column      Column   @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+}
