@@ -37,8 +37,12 @@ model Task {
   id          String   @id @default(uuid())
   title       String
   description String?
-  order       Int      // Для збереження порядку при Drag-and-Drop
-  columnId    String
-  column      Column   @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  priority    String?  @default("Medium")
+  label       String?  @default("Feature")
+  issueNumber String?
+  status      String?  @default("TODO")
+  order       Int      @default(0) // Для збереження порядку при Drag-and-Drop
+  columnId    String?
+  column      Column?  @relation(fields: [columnId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
 }
