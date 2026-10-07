@@ -7,42 +7,83 @@ datasource db {
 }
 
 model User {
-  id           String   @id @default(uuid())
-  email        String   @unique
-  passwordHash String
-  name         String
-  boards       Board[]
-  createdAt    DateTime @default(now())
+  id            String        @id @default(cuid())
+  email         String        @unique
+  name          String
+  avatarUrl     String?
+  passwordHash  String?
+  boards        Board[]       @relation("BoardOwner")
+  memberships   BoardMember[]
+  tasksAssigned Task[]        @relation("TaskAssignee")
+  tasksCreated  Task[]        @relation("TaskCreator")
+  createdAt     DateTime      @default(now())
 }
 
 model Board {
-  id        String   @id @default(uuid())
+  id        String        @id @default(cuid())
   title     String
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  ownerId   String
+  owner     User          @relation("BoardOwner", fields: [ownerId], references: [id])
   columns   Column[]
-  createdAt DateTime @default(now())
+  members   BoardMember[]
+  invites   Invite[]
+  tasks     Task[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model BoardMember {
+  boardId  String
+  userId   String
+  role     String   @default("member") // "owner" | "member"
+  joinedAt DateTime @default(now())
+  board    Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([boardId, userId])
+}
+
+model Invite {
+  id          String   @id @default(cuid())
+  token       String   @unique // crypto.randomBytes(24).toString('base64url')
+  boardId     String
+  email       String?          // null = запрошення-посилання для будь-кого
+  role        String   @default("member")
+  status      String   @default("pending") // pending | accepted | declined | revoked
+  invitedById String
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime         // +7 днів
+  board       Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
 }
 
 model Column {
-  id        String   @id @default(uuid())
-  title     String
-  order     Int      // Щоб знати, яка колонка перша, а яка друга
-  boardId   String
-  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  tasks     Task[]
+  id      String @id @default(cuid())
+  title   String
+  order   Int
+  boardId String
+  board   Board  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  tasks   Task[]
 }
 
 model Task {
-  id          String   @id @default(uuid())
+  id          String    @id @default(cuid())
   title       String
-  description String?
-  priority    String?  @default("Medium")
-  label       String?  @default("Feature")
+  description String?   @default("")
+  priority    String?   @default("Medium")
+  labels      String    @default("[]") // JSON-масив рядків
+  label       String?   @default("Feature")
+  dueDate     DateTime?
+  status      String?   @default("TODO")
+  order       Int       @default(0)
   issueNumber String?
-  status      String?  @default("TODO")
-  order       Int      @default(0) // Для збереження порядку при Drag-and-Drop
+  boardId     String?
+  board       Board?    @relation(fields: [boardId], references: [id], onDelete: Cascade)
   columnId    String?
-  column      Column?  @relation(fields: [columnId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
+  column      Column?   @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  assigneeId  String?
+  assignee    User?     @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  createdById String?
+  creator     User?     @relation("TaskCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 }
