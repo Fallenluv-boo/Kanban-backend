@@ -2219,31 +2219,75 @@ app.post('/api/invites/:token/decline', authenticateToken, async (req, res) => {
 // 💻 GITHUB WEBHOOK (/api/webhook/github)
 // ---------------------------------------------------------------------
 
-app.post('/api/webhook/github', (req, res) => {
-  const { commitMessage } = req.body;
-  if (!commitMessage) return res.status(400).json({ error: "Вкажіть commitMessage" });
+app.post('/api/webhook/github', async (req, res) => {
+  try {
+    const payload = req.body;
+    
+    // Витягуємо текст останнього коміту з масиву GitHub або з тестового поля
+    let commitMessage = '';
+    if (payload.commits && Array.isArray(payload.commits) && payload.commits.length > 0) {
+      commitMessage = payload.commits[payload.commits.length - 1].message || '';
+    } else if (payload.commitMessage) {
+      commitMessage = payload.commitMessage;
+    }
 
-  const match = commitMessage.match(/#(\d+)/);
-  if (!match) {
-    return res.json({ message: "У коміті немає посилання на issue (#ID)" });
+    if (!commitMessage) {
+      return res.status(200).json({ message: "No commit message found, ignored" });
+    }
+
+    const match = commitMessage.match(/#(\d+)/);
+    if (!match) {
+      return res.json({ message: "У коміті немає посилання на issue (#ID)" });
+    }
+
+    const issueNum = `#${match[1]}`;
+    let updatedTask = null;
+    let boardId = null;
+
+    // Шукаємо та оновлюємо таску в БД через Prisma, якщо вона доступна
+    if (prisma) {
+      try {
+        const dbTask = await prisma.task.findFirst({ where: { issueNumber: issueNum } });
+        if (dbTask) {
+          boardId = dbTask.boardId;
+          updatedTask = await prisma.task.update({
+            where: { id: dbTask.id },
+            data: { status: 'DONE' },
+          });
+        }
+      } catch (err) {
+        console.warn('Prisma webhook task update error:', err.message);
+      }
+    }
+
+    // Fallback до пам'яті, якщо в Prisma не знайдено
+    const task = memory.tasks.find(t => t.issueNumber === issueNum);
+    if (task) {
+      boardId = task.boardId;
+      task.status = 'DONE';
+      if (!updatedTask) updatedTask = task;
+    }
+
+    if (!updatedTask) {
+      return res.json({ message: `Таску ${issueNum} не знайдено на дошках` });
+    }
+
+    // Сповіщаємо всіх через веб-сокети
+    if (boardId) {
+      emitToBoard(boardId, 'task_moved_by_other', {
+        boardId,
+        taskId: updatedTask.id,
+        newStatus: 'DONE',
+        columnId: updatedTask.columnId,
+        newIndex: 0,
+      });
+    }
+
+    return res.json({ message: `Таску ${issueNum} успішно переведено в DONE`, task: formatTask(updatedTask) });
+  } catch (error) {
+    console.error('Webhook error:', error);
+    res.status(500).json({ error: "Помилка обробки вебхука" });
   }
-
-  const issueNum = `#${match[1]}`;
-  const task = memory.tasks.find(t => t.issueNumber === issueNum);
-
-  if (task) {
-    task.status = 'DONE';
-    emitToBoard(task.boardId, 'task_moved_by_other', {
-      boardId: task.boardId,
-      taskId: task.id,
-      newStatus: 'DONE',
-      columnId: task.columnId,
-      newIndex: 0,
-    });
-    return res.json({ message: `Таску ${issueNum} переведено в DONE`, task: formatTask(task) });
-  }
-
-  res.json({ message: `Таску ${issueNum} знайдено, статус оновлено` });
 });
 
 // ---------------------------------------------------------------------
